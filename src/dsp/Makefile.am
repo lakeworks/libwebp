@@ -7,6 +7,8 @@ noinst_LTLIBRARIES += libwebpdsp_sse41.la
 noinst_LTLIBRARIES += libwebpdspdecode_sse41.la
 noinst_LTLIBRARIES += libwebpdsp_avx2.la
 noinst_LTLIBRARIES += libwebpdspdecode_avx2.la
+noinst_LTLIBRARIES += libwebpdsp_avx512.la
+noinst_LTLIBRARIES += libwebpdspdecode_avx512.la
 noinst_LTLIBRARIES += libwebpdsp_neon.la
 noinst_LTLIBRARIES += libwebpdspdecode_neon.la
 noinst_LTLIBRARIES += libwebpdsp_msa.la
@@ -50,6 +52,11 @@ libwebpdspdecode_avx2_la_SOURCES =
 libwebpdspdecode_avx2_la_SOURCES += lossless_avx2.c
 libwebpdspdecode_avx2_la_CPPFLAGS = $(libwebpdsp_la_CPPFLAGS)
 libwebpdspdecode_avx2_la_CFLAGS = $(AM_CFLAGS) $(AVX2_FLAGS)
+
+libwebpdspdecode_avx512_la_SOURCES =
+libwebpdspdecode_avx512_la_SOURCES += lossless_avx512.c
+libwebpdspdecode_avx512_la_CPPFLAGS = $(libwebpdsp_la_CPPFLAGS)
+libwebpdspdecode_avx512_la_CFLAGS = $(AM_CFLAGS) $(AVX512_FLAGS)
 
 libwebpdspdecode_sse41_la_SOURCES =
 libwebpdspdecode_sse41_la_SOURCES += alpha_processing_sse41.c
@@ -136,6 +143,12 @@ libwebpdsp_avx2_la_CPPFLAGS = $(libwebpdsp_la_CPPFLAGS)
 libwebpdsp_avx2_la_CFLAGS = $(AM_CFLAGS) $(AVX2_FLAGS)
 libwebpdsp_avx2_la_LIBADD = libwebpdspdecode_avx2.la
 
+libwebpdsp_avx512_la_SOURCES =
+libwebpdsp_avx512_la_SOURCES += lossless_enc_avx512.c
+libwebpdsp_avx512_la_CPPFLAGS = $(libwebpdsp_la_CPPFLAGS)
+libwebpdsp_avx512_la_CFLAGS = $(AM_CFLAGS) $(AVX512_FLAGS)
+libwebpdsp_avx512_la_LIBADD = libwebpdspdecode_avx512.la
+
 libwebpdsp_neon_la_SOURCES =
 libwebpdsp_neon_la_SOURCES += cost_neon.c
 libwebpdsp_neon_la_SOURCES += enc_neon.c
@@ -181,6 +194,7 @@ libwebpdsp_la_LIBADD =
 libwebpdsp_la_LIBADD += libwebpdsp_sse2.la
 libwebpdsp_la_LIBADD += libwebpdsp_sse41.la
 libwebpdsp_la_LIBADD += libwebpdsp_avx2.la
+libwebpdsp_la_LIBADD += libwebpdsp_avx512.la
 libwebpdsp_la_LIBADD += libwebpdsp_neon.la
 libwebpdsp_la_LIBADD += libwebpdsp_msa.la
 libwebpdsp_la_LIBADD += libwebpdsp_mips32.la
@@ -195,6 +209,7 @@ if BUILD_LIBWEBPDECODER
   libwebpdspdecode_la_LIBADD += libwebpdspdecode_sse2.la
   libwebpdspdecode_la_LIBADD += libwebpdspdecode_sse41.la
   libwebpdspdecode_la_LIBADD += libwebpdspdecode_avx2.la
+  libwebpdspdecode_la_LIBADD += libwebpdspdecode_avx512.la
   libwebpdspdecode_la_LIBADD += libwebpdspdecode_neon.la
   libwebpdspdecode_la_LIBADD += libwebpdspdecode_msa.la
   libwebpdspdecode_la_LIBADD += libwebpdspdecode_mips32.la
