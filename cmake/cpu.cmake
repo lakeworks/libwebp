@@ -102,6 +102,11 @@ foreach(I_SIMD RANGE ${WEBP_SIMD_FLAGS_RANGE})
       # The detection for SSE2/SSE4 support under MSVC is based on the compiler
       # version so e.g., clang-cl will require flags to enable the assembly.
       list(GET SIMD_ENABLE_FLAGS ${I_SIMD} SIMD_COMPILE_FLAG)
+      # Empty enable-flag entries (no /arch: needed) must become a space so
+      # list(APPEND) preserves alignment between files and flags lists.
+      if(NOT SIMD_COMPILE_FLAG)
+        set(SIMD_COMPILE_FLAG " ")
+      endif()
     else()
       set(SIMD_COMPILE_FLAG " ")
     endif()
