@@ -163,6 +163,17 @@ static int x86CPUInfo(CPUFeature feature) {
       return !!(cpu_info[1] & (1 << 5));
     }
   }
+  if (feature == kAVX512) {
+    if (x86CPUInfo(kAVX2) && max_cpuid_value >= 7) {
+      GetCPUInfo(cpu_info, 7);
+      // EBX bit 16 = AVX-512F
+      if (!(cpu_info[1] & (1 << 16))) return 0;
+      // Verify OS saves ZMM state: XCR0 bits 5 (OPMASK), 6 (ZMM_Hi256),
+      // 7 (Hi16_ZMM)
+      return (xgetbv() & 0xE0) == 0xE0;
+    }
+    return 0;
+  }
   return 0;
 }
 WEBP_EXTERN VP8CPUInfo VP8GetCPUInfo;

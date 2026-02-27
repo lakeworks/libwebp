@@ -682,6 +682,7 @@ extern VP8CPUInfo VP8GetCPUInfo;
 extern void VP8LEncDspInitSSE2(void);
 extern void VP8LEncDspInitSSE41(void);
 extern void VP8LEncDspInitAVX2(void);
+extern void VP8LEncDspInitAVX512(void);
 extern void VP8LEncDspInitNEON(void);
 extern void VP8LEncDspInitMIPS32(void);
 extern void VP8LEncDspInitMIPSdspR2(void);
@@ -760,6 +761,11 @@ WEBP_DSP_INIT_FUNC(VP8LEncDspInit) {
 #if defined(WEBP_HAVE_AVX2)
         if (VP8GetCPUInfo(kAVX2)) {
           VP8LEncDspInitAVX2();
+#if defined(WEBP_HAVE_AVX512)
+          if (VP8GetCPUInfo(kAVX512)) {
+            VP8LEncDspInitAVX512();
+          }
+#endif
         }
 #endif
       }
