@@ -54,35 +54,7 @@ static void PredictorAdd0_AVX512(const uint32_t* in, const uint32_t* upper,
   (void)upper;
 }
 
-// Predictor1: left.
-// This has a serial dependency (each output depends on the previous).
-// We use the same prefix-sum approach as AVX2 but across 16 pixels.
-static void PredictorAdd1_AVX512(const uint32_t* in, const uint32_t* upper,
-                                 int num_pixels, uint32_t* WEBP_RESTRICT out) {
-  int i;
-  __m256i prev = _mm256_set1_epi32((int)out[-1]);
-  // Process 8 at a time using the AVX2 approach (prefix-sum within 256-bit).
-  // AVX-512 doesn't help much with serial prefix sums across 16 lanes,
-  // so we stay at 8-wide for correctness and decent performance.
-  for (i = 0; i + 8 <= num_pixels; i += 8) {
-    const __m256i src = _mm256_loadu_si256((const __m256i*)&in[i]);
-    const __m256i shift0 = _mm256_slli_si256(src, 4);
-    const __m256i sum0 = _mm256_add_epi8(src, shift0);
-    const __m256i shift1 = _mm256_slli_si256(sum0, 8);
-    const __m256i sum1 = _mm256_add_epi8(sum0, shift1);
-    const int32_t sum_abcd = _mm256_extract_epi32(sum1, 3);
-    const __m256i sum2 = _mm256_add_epi8(
-        sum1,
-        _mm256_set_epi32(sum_abcd, sum_abcd, sum_abcd, sum_abcd, 0, 0, 0, 0));
-    const __m256i res = _mm256_add_epi8(sum2, prev);
-    _mm256_storeu_si256((__m256i*)&out[i], res);
-    prev = _mm256_permutevar8x32_epi32(
-        res, _mm256_set_epi32(7, 7, 7, 7, 7, 7, 7, 7));
-  }
-  if (i != num_pixels) {
-    VP8LPredictorsAdd_SSE[1](in + i, upper + i, num_pixels - i, out + i);
-  }
-}
+// Predictor1 (left): serial dependency on out[i-1] — stays at AVX2.
 
 // Macro for fully parallel predictors (top row based).
 #define GENERATE_PREDICTOR_1(X, IN)                                         \
