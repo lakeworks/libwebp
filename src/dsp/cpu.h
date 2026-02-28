@@ -68,6 +68,27 @@
 #endif
 #endif
 
+// When using config.h on MSVC, the WEBP_HAVE_* defines from config.h are
+// sufficient to enable intrinsics compilation. Define WEBP_MSC_* so that
+// WEBP_USE_* macros below will be activated. Without this, MSVC + CMake builds
+// silently compile all SIMD files to empty stubs (MSVC doesn't define __SSE2__
+// like GCC/Clang, and WEBP_MSC_* are blocked by the !HAVE_CONFIG_H guard).
+#if defined(HAVE_CONFIG_H) && defined(_MSC_VER) && \
+    (defined(_M_X64) || defined(_M_IX86))
+#if defined(WEBP_HAVE_SSE2) && _MSC_VER > 1310
+#define WEBP_MSC_SSE2
+#endif
+#if defined(WEBP_HAVE_SSE41) && _MSC_VER >= 1500
+#define WEBP_MSC_SSE41
+#endif
+#if defined(WEBP_HAVE_AVX2) && _MSC_VER >= 1700
+#define WEBP_MSC_AVX2
+#endif
+#if defined(WEBP_HAVE_AVX512) && _MSC_VER >= 1920
+#define WEBP_MSC_AVX512
+#endif
+#endif
+
 // WEBP_HAVE_* are used to indicate the presence of the instruction set in dsp
 // files without intrinsics, allowing the corresponding Init() to be called.
 // Files containing intrinsics will need to be built targeting the instruction
