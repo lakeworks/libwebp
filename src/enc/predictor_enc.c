@@ -28,7 +28,7 @@
 #include "src/webp/types.h"
 
 #define HISTO_SIZE (4 * 256)
-static const int64_t kSpatialPredictorBias = 15ll << LOG_2_PRECISION_BITS;
+static const float kSpatialPredictorBias = 15.f;
 static const int kPredLowEffort = 11;
 static const uint32_t kMaskAlpha = 0xff000000;
 static const int kNumPredModes = 14;
@@ -43,33 +43,32 @@ static WEBP_INLINE int GetMax(int a, int b) { return (a < b) ? b : a; }
 // Compute a bias for prediction entropy using a global heuristic to favor
 // values closer to 0. Hence the final negative sign.
 // 'exp_val' has a scaling factor of 1/100.
-static int64_t PredictionCostBias(const uint32_t counts[256], uint64_t weight_0,
-                                  uint64_t exp_val) {
+static float PredictionCostBias(const uint32_t counts[256], float weight_0,
+                                float exp_val) {
   const int significant_symbols = 256 >> 4;
-  const uint64_t exp_decay_factor = 6;  // has a scaling factor of 1/10
-  uint64_t bits = (weight_0 * counts[0]) << LOG_2_PRECISION_BITS;
+  const float exp_decay_factor = 0.6f;
+  float bits = weight_0 * counts[0];
   int i;
-  exp_val <<= LOG_2_PRECISION_BITS;
   for (i = 1; i < significant_symbols; ++i) {
-    bits += DivRound(exp_val * (counts[i] + counts[256 - i]), 100);
-    exp_val = DivRound(exp_decay_factor * exp_val, 10);
+    bits += exp_val * (float)(counts[i] + counts[256 - i]) / 100.f;
+    exp_val *= exp_decay_factor;
   }
-  return -DivRound((int64_t)bits, 10);
+  return -bits / 10.f;
 }
 
-static int64_t PredictionCostSpatialHistogram(
+static float PredictionCostSpatialHistogram(
     const uint32_t accumulated[HISTO_SIZE], const uint32_t tile[HISTO_SIZE],
     int mode, int left_mode, int above_mode) {
   int i;
-  int64_t retval = 0;
+  float retval = 0.f;
   for (i = 0; i < 4; ++i) {
-    const uint64_t kExpValue = 94;
+    const float kExpValue = 94.f;
     retval += PredictionCostBias(&tile[i * 256], 1, kExpValue);
     // Compute the new cost if 'tile' is added to 'accumulate' but also add the
     // cost of the current histogram to guide the spatial predictor selection.
     // Basically, favor low entropy, locally and globally.
-    retval += (int64_t)VP8LCombinedShannonEntropy(&tile[i * 256],
-                                                  &accumulated[i * 256]);
+    retval += VP8LCombinedShannonEntropy(&tile[i * 256],
+                                         &accumulated[i * 256]);
   }
   // Favor keeping the areas locally similar.
   if (mode == left_mode) retval -= kSpatialPredictorBias;
@@ -350,14 +349,14 @@ static void GetBestPredictorForTile(const uint32_t* const all_argb,
       (tile_y > 0) ? (modes[(tile_y - 1) * tiles_per_row + tile_x] >> 8) & 0xff
                    : 0xff;
   int mode;
-  int64_t best_diff = WEBP_INT64_MAX;
+  float best_diff = MAX_BIT_COST;
   uint32_t best_mode = 0;
   const uint32_t* best_histo =
       GetHistoArgbConst(all_argb, /*subsampling_index=*/0, best_mode);
   for (mode = 0; mode < kNumPredModes; ++mode) {
     const uint32_t* const histo_argb =
         GetHistoArgbConst(all_argb, subsampling_index, mode);
-    const int64_t cur_diff = PredictionCostSpatialHistogram(
+    const float cur_diff = PredictionCostSpatialHistogram(
         accumulated_argb, histo_argb, mode, left_mode, above_mode);
 
     if (cur_diff < best_diff) {
@@ -620,7 +619,7 @@ static void GetBestPredictorsAndSubSampling(
     uint32_t** const all_modes, int* best_bits, uint32_t** best_mode) {
   const uint32_t tiles_per_row = VP8LSubSampleSize(width, min_bits);
   const uint32_t tiles_per_col = VP8LSubSampleSize(height, min_bits);
-  int64_t best_cost;
+  float best_cost;
   uint32_t subsampling_index;
   const uint32_t max_subsampling_index = max_bits - min_bits;
   // Compute the needed memory size for residual histograms, accumulated
@@ -740,13 +739,13 @@ static void GetBestPredictorsAndSubSampling(
   }
 
   // Figure out the best sampling.
-  best_cost = WEBP_INT64_MAX;
+  best_cost = MAX_BIT_COST;
   for (subsampling_index = 0; subsampling_index <= max_subsampling_index;
        ++subsampling_index) {
     int plane;
     const uint32_t* const accumulated =
         GetAccumulatedHisto(all_accumulated_argb, subsampling_index);
-    int64_t cost = VP8LShannonEntropy(
+    float cost = VP8LShannonEntropy(
         &all_pred_histos[subsampling_index * kNumPredModes], kNumPredModes);
     for (plane = 0; plane < 4; ++plane) {
       cost += VP8LShannonEntropy(&accumulated[plane * 256], 256);
@@ -851,21 +850,21 @@ static WEBP_INLINE uint32_t MultipliersToColorCode(
          m->green_to_red;
 }
 
-static int64_t PredictionCostCrossColor(const uint32_t accumulated[256],
-                                        const uint32_t counts[256]) {
+static float PredictionCostCrossColor(const uint32_t accumulated[256],
+                                      const uint32_t counts[256]) {
   // Favor low entropy, locally and globally.
   // Favor small absolute values for PredictionCostSpatial
-  static const uint64_t kExpValue = 240;
-  return (int64_t)VP8LCombinedShannonEntropy(counts, accumulated) +
+  static const float kExpValue = 240.f;
+  return VP8LCombinedShannonEntropy(counts, accumulated) +
          PredictionCostBias(counts, 3, kExpValue);
 }
 
-static int64_t GetPredictionCostCrossColorRed(
+static float GetPredictionCostCrossColorRed(
     const uint32_t* argb, int stride, int tile_width, int tile_height,
     VP8LMultipliers prev_x, VP8LMultipliers prev_y, int green_to_red,
     const uint32_t accumulated_red_histo[256]) {
   uint32_t histo[256] = { 0 };
-  int64_t cur_diff;
+  float cur_diff;
 
   VP8LCollectColorRedTransforms(argb, stride, tile_width, tile_height,
                                 green_to_red, histo);
@@ -873,14 +872,14 @@ static int64_t GetPredictionCostCrossColorRed(
   cur_diff = PredictionCostCrossColor(accumulated_red_histo, histo);
   if ((uint8_t)green_to_red == prev_x.green_to_red) {
     // favor keeping the areas locally similar
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if ((uint8_t)green_to_red == prev_y.green_to_red) {
     // favor keeping the areas locally similar
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if (green_to_red == 0) {
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   return cur_diff;
 }
@@ -893,7 +892,7 @@ static void GetBestGreenToRed(const uint32_t* argb, int stride, int tile_width,
   const int kMaxIters = 4 + ((7 * quality) >> 8);  // in range [4..6]
   int green_to_red_best = 0;
   int iter, offset;
-  int64_t best_diff = GetPredictionCostCrossColorRed(
+  float best_diff = GetPredictionCostCrossColorRed(
       argb, stride, tile_width, tile_height, prev_x, prev_y, green_to_red_best,
       accumulated_red_histo);
   for (iter = 0; iter < kMaxIters; ++iter) {
@@ -904,7 +903,7 @@ static void GetBestGreenToRed(const uint32_t* argb, int stride, int tile_width,
     // Try a negative and a positive delta from the best known value.
     for (offset = -delta; offset <= delta; offset += 2 * delta) {
       const int green_to_red_cur = offset + green_to_red_best;
-      const int64_t cur_diff = GetPredictionCostCrossColorRed(
+      const float cur_diff = GetPredictionCostCrossColorRed(
           argb, stride, tile_width, tile_height, prev_x, prev_y,
           green_to_red_cur, accumulated_red_histo);
       if (cur_diff < best_diff) {
@@ -916,12 +915,12 @@ static void GetBestGreenToRed(const uint32_t* argb, int stride, int tile_width,
   best_tx->green_to_red = (green_to_red_best & 0xff);
 }
 
-static int64_t GetPredictionCostCrossColorBlue(
+static float GetPredictionCostCrossColorBlue(
     const uint32_t* argb, int stride, int tile_width, int tile_height,
     VP8LMultipliers prev_x, VP8LMultipliers prev_y, int green_to_blue,
     int red_to_blue, const uint32_t accumulated_blue_histo[256]) {
   uint32_t histo[256] = { 0 };
-  int64_t cur_diff;
+  float cur_diff;
 
   VP8LCollectColorBlueTransforms(argb, stride, tile_width, tile_height,
                                  green_to_blue, red_to_blue, histo);
@@ -929,25 +928,25 @@ static int64_t GetPredictionCostCrossColorBlue(
   cur_diff = PredictionCostCrossColor(accumulated_blue_histo, histo);
   if ((uint8_t)green_to_blue == prev_x.green_to_blue) {
     // favor keeping the areas locally similar
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if ((uint8_t)green_to_blue == prev_y.green_to_blue) {
     // favor keeping the areas locally similar
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if ((uint8_t)red_to_blue == prev_x.red_to_blue) {
     // favor keeping the areas locally similar
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if ((uint8_t)red_to_blue == prev_y.red_to_blue) {
     // favor keeping the areas locally similar
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if (green_to_blue == 0) {
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   if (red_to_blue == 0) {
-    cur_diff -= 3ll << LOG_2_PRECISION_BITS;
+    cur_diff -= 3.f;
   }
   return cur_diff;
 }
@@ -969,7 +968,7 @@ static void GetBestGreenRedToBlue(const uint32_t* argb, int stride,
   int red_to_blue_best = 0;
   int iter;
   // Initial value at origin:
-  int64_t best_diff = GetPredictionCostCrossColorBlue(
+  float best_diff = GetPredictionCostCrossColorBlue(
       argb, stride, tile_width, tile_height, prev_x, prev_y, green_to_blue_best,
       red_to_blue_best, accumulated_blue_histo);
   for (iter = 0; iter < iters; ++iter) {
@@ -979,7 +978,7 @@ static void GetBestGreenRedToBlue(const uint32_t* argb, int stride,
       const int green_to_blue_cur =
           offset[axis][0] * delta + green_to_blue_best;
       const int red_to_blue_cur = offset[axis][1] * delta + red_to_blue_best;
-      const int64_t cur_diff = GetPredictionCostCrossColorBlue(
+      const float cur_diff = GetPredictionCostCrossColorBlue(
           argb, stride, tile_width, tile_height, prev_x, prev_y,
           green_to_blue_cur, red_to_blue_cur, accumulated_blue_histo);
       if (cur_diff < best_diff) {

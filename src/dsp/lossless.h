@@ -193,9 +193,9 @@ extern VP8LPredictorAddSubFunc VP8LPredictorsSub_SSE[16];
 // Huffman-cost related functions.
 
 typedef uint32_t (*VP8LCostFunc)(const uint32_t* population, int length);
-typedef uint64_t (*VP8LCombinedShannonEntropyFunc)(const uint32_t X[256],
-                                                   const uint32_t Y[256]);
-typedef uint64_t (*VP8LShannonEntropyFunc)(const uint32_t* X, int length);
+typedef float (*VP8LCombinedShannonEntropyFunc)(const uint32_t X[256],
+                                                const uint32_t Y[256]);
+typedef float (*VP8LShannonEntropyFunc)(const uint32_t* X, int length);
 
 extern VP8LCostFunc VP8LExtraCost;
 extern VP8LCombinedShannonEntropyFunc VP8LCombinedShannonEntropy;
@@ -207,7 +207,7 @@ typedef struct {        // small struct to hold counters
 } VP8LStreaks;
 
 typedef struct {            // small struct to hold bit entropy results
-  uint64_t entropy;         // entropy
+  float entropy;            // entropy
   uint32_t sum;             // sum of the population
   int nonzeros;             // number of non-zero elements in the population
   uint32_t max_val;         // maximum value in the population

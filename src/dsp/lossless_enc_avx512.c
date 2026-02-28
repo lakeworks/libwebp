@@ -28,6 +28,121 @@
 #include "src/webp/types.h"
 
 //------------------------------------------------------------------------------
+// Private integer copies of entropy tables for AVX-512 SIMD gather.
+// The global kLog2Table/kSLog2Table are now float; these preserve the original
+// integer representation needed for vpgatherdd / integer SIMD computation.
+// Values are v*log2(v) scaled by (1 << 23).
+#define LOG_2_PRECISION_BITS_INT 23
+#define LOG_2_RECIPROCAL_FIXED_INT ((uint64_t)12102203)
+
+static const uint32_t kLog2Table_int[LOG_LOOKUP_IDX_MAX] = {
+         0,        0,  8388608, 13295629, 16777216, 19477745, 21684237,
+  23549800, 25165824, 26591258, 27866353, 29019816, 30072845, 31041538,
+  31938408, 32773374, 33554432, 34288123, 34979866, 35634199, 36254961,
+  36845429, 37408424, 37946388, 38461453, 38955489, 39430146, 39886887,
+  40327016, 40751698, 41161982, 41558811, 41943040, 42315445, 42676731,
+  43027545, 43368474, 43700062, 44022807, 44337167, 44643569, 44942404,
+  45234037, 45518808, 45797032, 46069003, 46334996, 46595268, 46850061,
+  47099600, 47344097, 47583753, 47818754, 48049279, 48275495, 48497560,
+  48715624, 48929828, 49140306, 49347187, 49550590, 49750631, 49947419,
+  50141058, 50331648, 50519283, 50704053, 50886044, 51065339, 51242017,
+  51416153, 51587818, 51757082, 51924012, 52088670, 52251118, 52411415,
+  52569616, 52725775, 52879946, 53032177, 53182516, 53331012, 53477707,
+  53622645, 53765868, 53907416, 54047327, 54185640, 54322389, 54457611,
+  54591338, 54723604, 54854440, 54983876, 55111943, 55238669, 55364082,
+  55488208, 55611074, 55732705, 55853126, 55972361, 56090432, 56207362,
+  56323174, 56437887, 56551524, 56664103, 56775645, 56886168, 56995691,
+  57104232, 57211808, 57318436, 57424133, 57528914, 57632796, 57735795,
+  57837923, 57939198, 58039632, 58139239, 58238033, 58336027, 58433234,
+  58529666, 58625336, 58720256, 58814437, 58907891, 59000628, 59092661,
+  59183999, 59274652, 59364632, 59453947, 59542609, 59630625, 59718006,
+  59804761, 59890898, 59976426, 60061354, 60145690, 60229443, 60312620,
+  60395229, 60477278, 60558775, 60639726, 60720140, 60800023, 60879382,
+  60958224, 61036555, 61114383, 61191714, 61268554, 61344908, 61420785,
+  61496188, 61571124, 61645600, 61719620, 61793189, 61866315, 61939001,
+  62011253, 62083076, 62154476, 62225457, 62296024, 62366182, 62435935,
+  62505289, 62574248, 62642816, 62710997, 62778797, 62846219, 62913267,
+  62979946, 63046260, 63112212, 63177807, 63243048, 63307939, 63372484,
+  63436687, 63500551, 63564080, 63627277, 63690146, 63752690, 63814912,
+  63876816, 63938405, 63999682, 64060650, 64121313, 64181673, 64241734,
+  64301498, 64360969, 64420148, 64479040, 64537646, 64595970, 64654014,
+  64711782, 64769274, 64826495, 64883447, 64940132, 64996553, 65052711,
+  65108611, 65164253, 65219641, 65274776, 65329662, 65384299, 65438691,
+  65492840, 65546747, 65600416, 65653847, 65707044, 65760008, 65812741,
+  65865245, 65917522, 65969575, 66021404, 66073013, 66124403, 66175575,
+  66226531, 66277275, 66327806, 66378127, 66428240, 66478146, 66527847,
+  66577345, 66626641, 66675737, 66724635, 66773336, 66821842, 66870154,
+  66918274, 66966204, 67013944, 67061497
+};
+
+static const uint64_t kSLog2Table_int[LOG_LOOKUP_IDX_MAX] = {
+               0,              0,       16777216,       39886887,
+        67108864,       97388723,      130105423,      164848600,
+       201326592,      239321324,      278663526,      319217973,
+       360874141,      403539997,      447137711,      491600606,
+       536870912,      582898099,      629637592,      677049776,
+       725099212,      773754010,      822985323,      872766924,
+       923074875,      973887230,     1025183802,     1076945958,
+      1129156447,     1181799249,     1234859451,     1288323135,
+      1342177280,     1396409681,     1451008871,     1505964059,
+      1561265072,     1616902301,     1672866655,     1729149526,
+      1785742744,     1842638548,     1899829557,     1957308741,
+      2015069397,     2073105127,     2131409817,  2189977618ull,
+   2248802933ull,  2307880396ull,  2367204859ull,  2426771383ull,
+   2486575220ull,  2546611805ull,  2606876748ull,  2667365819ull,
+   2728074942ull,  2789000187ull,  2850137762ull,  2911484006ull,
+   2973035382ull,  3034788471ull,  3096739966ull,  3158886666ull,
+   3221225472ull,  3283753383ull,  3346467489ull,  3409364969ull,
+   3472443085ull,  3535699182ull,  3599130679ull,  3662735070ull,
+   3726509920ull,  3790452862ull,  3854561593ull,  3918833872ull,
+   3983267519ull,  4047860410ull,  4112610476ull,  4177515704ull,
+   4242574127ull,  4307783833ull,  4373142952ull,  4438649662ull,
+   4504302186ull,  4570098787ull,  4636037770ull,  4702117480ull,
+   4768336298ull,  4834692645ull,  4901184974ull,  4967811774ull,
+   5034571569ull,  5101462912ull,  5168484389ull,  5235634615ull,
+   5302912235ull,  5370315922ull,  5437844376ull,  5505496324ull,
+   5573270518ull,  5641165737ull,  5709180782ull,  5777314477ull,
+   5845565671ull,  5913933235ull,  5982416059ull,  6051013057ull,
+   6119723161ull,  6188545324ull,  6257478518ull,  6326521733ull,
+   6395673979ull,  6464934282ull,  6534301685ull,  6603775250ull,
+   6673354052ull,  6743037185ull,  6812823756ull,  6882712890ull,
+   6952703725ull,  7022795412ull,  7092987118ull,  7163278025ull,
+   7233667324ull,  7304154222ull,  7374737939ull,  7445417707ull,
+   7516192768ull,  7587062379ull,  7658025806ull,  7729082328ull,
+   7800231234ull,  7871471825ull,  7942803410ull,  8014225311ull,
+   8085736859ull,  8157337394ull,  8229026267ull,  8300802839ull,
+   8372666477ull,  8444616560ull,  8516652476ull,  8588773618ull,
+   8660979393ull,  8733269211ull,  8805642493ull,  8878098667ull,
+   8950637170ull,  9023257446ull,  9095958945ull,  9168741125ull,
+   9241603454ull,  9314545403ull,  9387566451ull,  9460666086ull,
+   9533843800ull,  9607099093ull,  9680431471ull,  9753840445ull,
+   9827325535ull,  9900886263ull,  9974522161ull, 10048232765ull,
+  10122017615ull, 10195876260ull, 10269808253ull, 10343813150ull,
+  10417890516ull, 10492039919ull, 10566260934ull, 10640553138ull,
+  10714916116ull, 10789349456ull, 10863852751ull, 10938425600ull,
+  11013067604ull, 11087778372ull, 11162557513ull, 11237404645ull,
+  11312319387ull, 11387301364ull, 11462350205ull, 11537465541ull,
+  11612647010ull, 11687894253ull, 11763206912ull, 11838584638ull,
+  11914027082ull, 11989533899ull, 12065104750ull, 12140739296ull,
+  12216437206ull, 12292198148ull, 12368021795ull, 12443907826ull,
+  12519855920ull, 12595865759ull, 12671937032ull, 12748069427ull,
+  12824262637ull, 12900516358ull, 12976830290ull, 13053204134ull,
+  13129637595ull, 13206130381ull, 13282682202ull, 13359292772ull,
+  13435961806ull, 13512689025ull, 13589474149ull, 13666316903ull,
+  13743217014ull, 13820174211ull, 13897188225ull, 13974258793ull,
+  14051385649ull, 14128568535ull, 14205807192ull, 14283101363ull,
+  14360450796ull, 14437855239ull, 14515314443ull, 14592828162ull,
+  14670396151ull, 14748018167ull, 14825693972ull, 14903423326ull,
+  14981205995ull, 15059041743ull, 15136930339ull, 15214871554ull,
+  15292865160ull, 15370910930ull, 15449008641ull, 15527158071ull,
+  15605359001ull, 15683611210ull, 15761914485ull, 15840268608ull,
+  15918673369ull, 15997128556ull, 16075633960ull, 16154189373ull,
+  16232794589ull, 16311449405ull, 16390153617ull, 16468907026ull,
+  16547709431ull, 16626560636ull, 16705460444ull, 16784408661ull,
+  16863405094ull, 16942449552ull, 17021541845ull, 17100681785ull
+};
+
+//------------------------------------------------------------------------------
 // Subtract-Green Transform
 
 static void SubtractGreenFromBlueAndRed_AVX512(uint32_t* argb_data,
@@ -219,15 +334,19 @@ static void CollectColorRedTransforms_AVX512(
 #if !defined(WEBP_HAVE_SLOW_CLZ_CTZ)
 
 //------------------------------------------------------------------------------
-// Fully vectorized v*log2(v) using AVX-512CD (vplzcntd) + kLog2Table gather.
+// Fully vectorized v*log2(v) using AVX-512CD (vplzcntd) + kLog2Table_int gather.
 //
-// Computes FastSLog2 for 8 uint32 values expanded to 8 uint64 results.
-// Values 0..255: gathered from kSLog2Table[256] (precomputed uint64_t).
-// Values 256..65535: vplzcntd + kLog2Table[256] gather + fixed-point multiply.
+// Computes FastSLog2 for 8 uint32 values expanded to 8 uint64 results
+// in integer-scaled domain (scaled by 1 << LOG_2_PRECISION_BITS_INT = 1<<23).
+// Uses private integer table copies (kLog2Table_int, kSLog2Table_int) since
+// the global tables are now float.
+//
+// Values 0..255: gathered from kSLog2Table_int[256] (precomputed uint64_t).
+// Values 256..65535: vplzcntd + kLog2Table_int[256] gather + fixed-point mul.
 //   log_cnt = floor(log2(v)) - 7
 //   v_norm = v >> log_cnt     (range [128..255])
-//   result = v * (kLog2Table[v_norm] + (log_cnt << 23))
-//          + LOG_2_RECIPROCAL_FIXED * (v & ((1 << log_cnt) - 1))
+//   result = v * (kLog2Table_int[v_norm] + (log_cnt << 23))
+//          + LOG_2_RECIPROCAL_FIXED_INT * (v & ((1 << log_cnt) - 1))
 // All inputs must be < 65536. 'nz_mask' marks truly nonzero lanes;
 // zero lanes are forced to 1 by the caller and masked out in the result.
 //
@@ -237,12 +356,12 @@ static WEBP_INLINE __m512i FastSLog2_8x_AVX512(const __m256i v32,
   // Zero-extend 8 x uint32 to 8 x uint64 for final arithmetic
   const __m512i v = _mm512_cvtepu32_epi64(v32);
 
-  // --- Small path: v in [1..255], direct kSLog2Table lookup ---
+  // --- Small path: v in [1..255], direct kSLog2Table_int lookup ---
   const __m512i k255_64 = _mm512_set1_epi64(255);
   const __mmask8 is_small = _mm512_cmple_epu64_mask(v, k255_64) & nz_mask;
-  // Gather 64-bit values from kSLog2Table. Scale=8 (sizeof(uint64_t)).
+  // Gather 64-bit values from kSLog2Table_int. Scale=8 (sizeof(uint64_t)).
   const __m512i slog_tbl = _mm512_mask_i64gather_epi64(
-      _mm512_setzero_si512(), is_small, v, (const void*)kSLog2Table, 8);
+      _mm512_setzero_si512(), is_small, v, (const void*)kSLog2Table_int, 8);
 
   // --- Large path: v in [256..65535], vectorized log2 ---
   const __mmask8 is_large = (~is_small) & nz_mask;
@@ -258,20 +377,21 @@ static WEBP_INLINE __m512i FastSLog2_8x_AVX512(const __m256i v32,
   // treats shift as unsigned → shift >= 32 → v_norm = 0. Safe.
   const __m256i v_norm = _mm256_srlv_epi32(v32, log_cnt);
 
-  // Gather log2 fractional bits: kLog2Table[v_norm], scale=4 (uint32_t)
+  // Gather log2 fractional bits: kLog2Table_int[v_norm], scale=4 (uint32_t)
   // v_norm values are in [128..255] for 'is_large' lanes, and may be arbitrary
-  // for other lanes. Since kLog2Table[256] is the full table, all v_norm values
-  // in [0..255] are safe indices. For lanes where is_large=0, v_norm could be
-  // out of range (e.g., v=1 -> lzcnt=31, log_cnt=24, v_norm=0), but
-  // kLog2Table[0]=0 which is harmless. The result is only used for is_large lanes.
+  // for other lanes. Since kLog2Table_int[256] is the full table, all v_norm
+  // values in [0..255] are safe indices. For lanes where is_large=0, v_norm
+  // could be out of range (e.g., v=1 -> lzcnt=31, log_cnt=24, v_norm=0), but
+  // kLog2Table_int[0]=0 which is harmless. The result is only used for
+  // is_large lanes.
   const __m256i log2_frac = _mm256_i32gather_epi32(
-      (const int*)kLog2Table, v_norm, 4);
+      (const int*)kLog2Table_int, v_norm, 4);
 
-  // log2_fixed = log2_frac + (log_cnt << LOG_2_PRECISION_BITS)
+  // log2_fixed = log2_frac + (log_cnt << LOG_2_PRECISION_BITS_INT)
   const __m256i log2_fixed = _mm256_add_epi32(
-      log2_frac, _mm256_slli_epi32(log_cnt, LOG_2_PRECISION_BITS));
+      log2_frac, _mm256_slli_epi32(log_cnt, LOG_2_PRECISION_BITS_INT));
 
-  // correction = LOG_2_RECIPROCAL_FIXED * (v & ((1 << log_cnt) - 1))
+  // correction = LOG_2_RECIPROCAL_FIXED_INT * (v & ((1 << log_cnt) - 1))
   // Max: v_frac=255, product=255*12102203=3.09G (0xB7FC0B45). Exceeds INT32_MAX
   // but fits UINT32. mullo_epi32 produces correct low 32 bits either way;
   // cvtepu32_epi64 (unsigned extend) preserves the full value.
@@ -280,7 +400,7 @@ static WEBP_INLINE __m512i FastSLog2_8x_AVX512(const __m256i v32,
                                            _mm256_sub_epi32(y,
                                                _mm256_set1_epi32(1)));
   const __m256i corr32 = _mm256_mullo_epi32(
-      _mm256_set1_epi32((int)LOG_2_RECIPROCAL_FIXED), v_frac);
+      _mm256_set1_epi32((int)LOG_2_RECIPROCAL_FIXED_INT), v_frac);
 
   // result = v * log2_fixed + correction, all in 64-bit
   // v < 65536 (16 bits), log2_fixed < 2^28 => product < 44 bits, fits uint64
@@ -302,10 +422,12 @@ static WEBP_INLINE __m512i FastSLog2_8x_AVX512(const __m256i v32,
 //
 // Expected speedup vs AVX2: ~3-5x on Zen 5 (AVX2 does scalar VP8LFastSLog2
 // for every nonzero element; we do a fixed-cost SIMD computation per 8 values).
-static uint64_t CombinedShannonEntropy_AVX512(const uint32_t X[256],
-                                              const uint32_t Y[256]) {
+static float CombinedShannonEntropy_AVX512(const uint32_t X[256],
+                                           const uint32_t Y[256]) {
   int i;
-  // Four 8 x uint64 accumulators (rotating to hide latency)
+  // Four 8 x uint64 accumulators (rotating to hide latency).
+  // Internal computation remains in integer-scaled domain (x << 23);
+  // converted to float at the return boundary.
   __m512i acc0 = _mm512_setzero_si512();
   __m512i acc1 = _mm512_setzero_si512();
   __m512i acc2 = _mm512_setzero_si512();
@@ -315,7 +437,7 @@ static uint64_t CombinedShannonEntropy_AVX512(const uint32_t X[256],
   const __m512i zero = _mm512_setzero_si512();
   const __m512i k65536 = _mm512_set1_epi32(65536);
   const __m256i one256 = _mm256_set1_epi32(1);
-  uint64_t retval_overflow = 0;
+  float retval_overflow = 0.f;  // accumulates VP8LFastSLog2 (float) results
 
   for (i = 0; i < 256; i += 16) {
     const __m512i xv = _mm512_loadu_si512((const __m512i*)(X + i));
@@ -396,7 +518,11 @@ static uint64_t CombinedShannonEntropy_AVX512(const uint32_t X[256],
     const __m128i acc_2hi = _mm256_extracti128_si256(acc_4, 1);
     const __m128i acc_2 = _mm_add_epi64(acc_2lo, acc_2hi);
     const __m128i acc_1 = _mm_add_epi64(acc_2, _mm_srli_si128(acc_2, 8));
-    uint64_t retval = (uint64_t)_mm_cvtsi128_si64(acc_1) + retval_overflow;
+    // SIMD accumulators are in integer-scaled domain (x << 23).
+    // Convert to float by dividing by (1 << 23).
+    const uint64_t retval_int = (uint64_t)_mm_cvtsi128_si64(acc_1);
+    const float retval_f =
+        (float)((double)retval_int / (double)(1 << LOG_2_PRECISION_BITS_INT));
 
     // Reduce 16 x uint32 sums -> scalar
     // Fold 512 -> 256 -> 128, then hadd within 128
@@ -420,8 +546,9 @@ static uint64_t CombinedShannonEntropy_AVX512(const uint32_t X[256],
     const __m128i sxy_1 = _mm_add_epi32(sxy_2, _mm_srli_si128(sxy_2, 4));
     const uint32_t sumXY = (uint32_t)_mm_cvtsi128_si32(sxy_1);
 
-    retval = VP8LFastSLog2(sumX) + VP8LFastSLog2(sumXY) - retval;
-    return retval;
+    // Combine: SIMD part (converted from integer-scaled) + overflow part (float)
+    return VP8LFastSLog2(sumX) + VP8LFastSLog2(sumXY)
+           - retval_f - retval_overflow;
   }
 }
 
@@ -960,7 +1087,7 @@ WEBP_TSAN_IGNORE_FUNCTION void VP8LEncDspInitAVX512(void) {
   VP8LPredictorsSub[13] = PredictorSub13_AVX512;
 
   // Fully vectorized CombinedShannonEntropy: uses vplzcntd (AVX-512CD) +
-  // kLog2Table gather to compute v*log2(v) entirely in SIMD, eliminating
+  // kLog2Table_int gather to compute v*log2(v) entirely in SIMD, eliminating
   // all scalar VP8LFastSLog2 calls. ~3-5x faster than AVX2 version.
 #if !defined(DONT_USE_COMBINED_SHANNON_ENTROPY_AVX512_FUNC)
   VP8LCombinedShannonEntropy = CombinedShannonEntropy_AVX512;

@@ -280,10 +280,10 @@ static void AddVectorEq_AVX2(const uint32_t* WEBP_RESTRICT a,
 
 #if !defined(WEBP_HAVE_SLOW_CLZ_CTZ)
 
-static uint64_t CombinedShannonEntropy_AVX2(const uint32_t X[256],
-                                            const uint32_t Y[256]) {
+static float CombinedShannonEntropy_AVX2(const uint32_t X[256],
+                                         const uint32_t Y[256]) {
   int i;
-  uint64_t retval = 0;
+  float retval = 0.f;
   uint32_t sumX = 0, sumXY = 0;
   const __m256i zero = _mm256_setzero_si256();
 

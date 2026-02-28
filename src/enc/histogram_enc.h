@@ -25,6 +25,8 @@ extern "C" {
 
 // Not a trivial literal symbol.
 #define VP8L_NON_TRIVIAL_SYM ((uint16_t)(0xffff))
+// Unreachable cost sentinel for float comparisons.
+#define MAX_BIT_COST 1.e38f
 
 // A simple container for histograms of data.
 typedef struct {
@@ -42,9 +44,9 @@ typedef struct {
   // Index of the unique value of a histogram if any, VP8L_NON_TRIVIAL_SYM
   // otherwise.
   uint16_t trivial_symbol[5];
-  uint64_t bit_cost;        // Cached value of total bit cost.
+  float bit_cost;           // Cached value of total bit cost.
   // Cached values of entropy costs: literal, red, blue, alpha, distance
-  uint64_t costs[5];
+  float costs[5];
   uint8_t is_used[5];       // 5 for literal, red, blue, alpha, distance
   uint16_t bin_id;          // entropy bin index.
 } VP8LHistogram;
@@ -114,11 +116,11 @@ int VP8LGetHistoImageSymbols(int xsize, int ysize,
                              int* const percent);
 
 // Returns the entropy for the symbols in the input array.
-uint64_t VP8LBitsEntropy(const uint32_t* const array, int n);
+float VP8LBitsEntropy(const uint32_t* const array, int n);
 
 // Estimate how many bits the combined entropy of literals and distance
 // approximately maps to.
-uint64_t VP8LHistogramEstimateBits(const VP8LHistogram* const h);
+float VP8LHistogramEstimateBits(const VP8LHistogram* const h);
 
 #ifdef __cplusplus
 }
