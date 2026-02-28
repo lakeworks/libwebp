@@ -429,20 +429,23 @@ static void ConvertBGRAToRGBA_AVX512(const uint32_t* WEBP_RESTRICT src,
 extern void VP8LDspInitAVX512(void);
 
 WEBP_TSAN_IGNORE_FUNCTION void VP8LDspInitAVX512(void) {
+  // True 512-bit parallel predictors (16 px/iter, no serial dependency).
   VP8LPredictorsAdd[0] = PredictorAdd0_AVX512;
-  VP8LPredictorsAdd[1] = PredictorAdd1_AVX512;
   VP8LPredictorsAdd[2] = PredictorAdd2_AVX512;
   VP8LPredictorsAdd[3] = PredictorAdd3_AVX512;
   VP8LPredictorsAdd[4] = PredictorAdd4_AVX512;
   VP8LPredictorsAdd[8] = PredictorAdd8_AVX512;
   VP8LPredictorsAdd[9] = PredictorAdd9_AVX512;
-  VP8LPredictorsAdd[10] = PredictorAdd10_AVX512;
-  VP8LPredictorsAdd[11] = PredictorAdd11_AVX512;
-  VP8LPredictorsAdd[12] = PredictorAdd12_AVX512;
 
+  // Full-row transforms: process entire image width, maximum AVX-512 benefit.
   VP8LAddGreenToBlueAndRed = AddGreenToBlueAndRed_AVX512;
   VP8LTransformColorInverse = TransformColorInverse_AVX512;
   VP8LConvertBGRAToRGBA = ConvertBGRAToRGBA_AVX512;
+
+  // Left at AVX2 -- predictors 1, 10, 11, 12: serial dependency on
+  //   previous output pixel (left, or avg involving left). These use
+  //   256-bit AVX2 internally anyway -- overriding wastes dispatch and
+  //   keeps CPU in heavy AVX-512 power state for zero benefit.
 }
 
 #else  // !WEBP_USE_AVX512

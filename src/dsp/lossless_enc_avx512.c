@@ -698,18 +698,12 @@ static void PredictorSub13_AVX512(const uint32_t* in, const uint32_t* upper,
 extern void VP8LEncDspInitAVX512(void);
 
 WEBP_TSAN_IGNORE_FUNCTION void VP8LEncDspInitAVX512(void) {
+  // Simple byte-parallel transforms: clear 512-bit wins (16 px/iter vs 8).
   VP8LSubtractGreenFromBlueAndRed = SubtractGreenFromBlueAndRed_AVX512;
   VP8LTransformColor = TransformColor_AVX512;
-  VP8LCollectColorBlueTransforms = CollectColorBlueTransforms_AVX512;
-  VP8LCollectColorRedTransforms = CollectColorRedTransforms_AVX512;
-  VP8LAddVector = AddVector_AVX512;
-  VP8LAddVectorEq = AddVectorEq_AVX512;
-#if !defined(DONT_USE_COMBINED_SHANNON_ENTROPY_AVX512_FUNC)
-  VP8LCombinedShannonEntropy = CombinedShannonEntropy_AVX512;
-#endif
-  VP8LVectorMismatch = VectorMismatch_AVX512;
   VP8LBundleColorMap = BundleColorMap_AVX512;
 
+  // Trivially parallel predictors: no cross-element dependencies.
   VP8LPredictorsSub[0] = PredictorSub0_AVX512;
   VP8LPredictorsSub[1] = PredictorSub1_AVX512;
   VP8LPredictorsSub[2] = PredictorSub2_AVX512;
@@ -721,11 +715,17 @@ WEBP_TSAN_IGNORE_FUNCTION void VP8LEncDspInitAVX512(void) {
   VP8LPredictorsSub[8] = PredictorSub8_AVX512;
   VP8LPredictorsSub[9] = PredictorSub9_AVX512;
   VP8LPredictorsSub[10] = PredictorSub10_AVX512;
-  VP8LPredictorsSub[11] = PredictorSub11_AVX512;
-  VP8LPredictorsSub[12] = PredictorSub12_AVX512;
-  VP8LPredictorsSub[13] = PredictorSub13_AVX512;
-  VP8LPredictorsSub[14] = PredictorSub0_AVX512;  // <- security sentinels
+  VP8LPredictorsSub[14] = PredictorSub0_AVX512;  // security sentinels
   VP8LPredictorsSub[15] = PredictorSub0_AVX512;
+
+  // Left at AVX2 -- CombinedShannonEntropy: scalar VP8LFastSLog2 core
+  //   means wider mask gives less amortization than AVX2's 32-element groups.
+  // Left at AVX2 -- CollectColorBlue/RedTransforms: 64B store -> 16 byte
+  //   loads causes store-forwarding stall. AVX2's 32B -> 8 loads is better.
+  // Left at AVX2 -- VectorMismatch: marginal benefit, early-exit dominated.
+  // Left at AVX2 -- AddVector/AddVectorEq: marginal for typical sizes.
+  // Left at AVX2 -- PredictorsSub[11,12,13]: complex predictors with high
+  //   register pressure at 512-bit width. 12/13 use unpack+pack chains.
 }
 
 #else  // !WEBP_USE_AVX512
