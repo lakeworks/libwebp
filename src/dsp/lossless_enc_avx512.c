@@ -213,104 +213,6 @@ static void CollectColorRedTransforms_AVX512(
 #undef MK_CST_16
 
 //------------------------------------------------------------------------------
-
-// Note we are adding uint32_t's as *signed* int32's (using _mm512_add_epi32).
-// But that's ok since the histogram values are less than 1<<28.
-static void AddVector_AVX512(const uint32_t* WEBP_RESTRICT a,
-                             const uint32_t* WEBP_RESTRICT b,
-                             uint32_t* WEBP_RESTRICT out, int size) {
-  int i = 0;
-  int aligned_size = size & ~63;
-  assert(size >= 32);
-  assert(size % 2 == 0);
-
-  // Process 64 uint32_t per iteration (4 x 512-bit loads).
-  while (i < aligned_size) {
-    const __m512i a0 = _mm512_loadu_si512((const __m512i*)&a[i + 0]);
-    const __m512i a1 = _mm512_loadu_si512((const __m512i*)&a[i + 16]);
-    const __m512i a2 = _mm512_loadu_si512((const __m512i*)&a[i + 32]);
-    const __m512i a3 = _mm512_loadu_si512((const __m512i*)&a[i + 48]);
-    const __m512i b0 = _mm512_loadu_si512((const __m512i*)&b[i + 0]);
-    const __m512i b1 = _mm512_loadu_si512((const __m512i*)&b[i + 16]);
-    const __m512i b2 = _mm512_loadu_si512((const __m512i*)&b[i + 32]);
-    const __m512i b3 = _mm512_loadu_si512((const __m512i*)&b[i + 48]);
-    _mm512_storeu_si512((__m512i*)&out[i + 0], _mm512_add_epi32(a0, b0));
-    _mm512_storeu_si512((__m512i*)&out[i + 16], _mm512_add_epi32(a1, b1));
-    _mm512_storeu_si512((__m512i*)&out[i + 32], _mm512_add_epi32(a2, b2));
-    _mm512_storeu_si512((__m512i*)&out[i + 48], _mm512_add_epi32(a3, b3));
-    i += 64;
-  }
-
-  if ((size & 32) != 0) {
-    const __m512i a0 = _mm512_loadu_si512((const __m512i*)&a[i + 0]);
-    const __m512i a1 = _mm512_loadu_si512((const __m512i*)&a[i + 16]);
-    const __m512i b0 = _mm512_loadu_si512((const __m512i*)&b[i + 0]);
-    const __m512i b1 = _mm512_loadu_si512((const __m512i*)&b[i + 16]);
-    _mm512_storeu_si512((__m512i*)&out[i + 0], _mm512_add_epi32(a0, b0));
-    _mm512_storeu_si512((__m512i*)&out[i + 16], _mm512_add_epi32(a1, b1));
-    i += 32;
-  }
-
-  if ((size & 16) != 0) {
-    const __m512i a0 = _mm512_loadu_si512((const __m512i*)&a[i]);
-    const __m512i b0 = _mm512_loadu_si512((const __m512i*)&b[i]);
-    _mm512_storeu_si512((__m512i*)&out[i], _mm512_add_epi32(a0, b0));
-    i += 16;
-  }
-
-  size &= 15;
-  for (; size > 0; --size, ++i) {
-    out[i] = a[i] + b[i];
-  }
-}
-
-static void AddVectorEq_AVX512(const uint32_t* WEBP_RESTRICT a,
-                               uint32_t* WEBP_RESTRICT out, int size) {
-  int i = 0;
-  int aligned_size = size & ~63;
-  assert(size >= 32);
-  assert(size % 2 == 0);
-
-  while (i < aligned_size) {
-    const __m512i a0 = _mm512_loadu_si512((const __m512i*)&a[i + 0]);
-    const __m512i a1 = _mm512_loadu_si512((const __m512i*)&a[i + 16]);
-    const __m512i a2 = _mm512_loadu_si512((const __m512i*)&a[i + 32]);
-    const __m512i a3 = _mm512_loadu_si512((const __m512i*)&a[i + 48]);
-    const __m512i b0 = _mm512_loadu_si512((const __m512i*)&out[i + 0]);
-    const __m512i b1 = _mm512_loadu_si512((const __m512i*)&out[i + 16]);
-    const __m512i b2 = _mm512_loadu_si512((const __m512i*)&out[i + 32]);
-    const __m512i b3 = _mm512_loadu_si512((const __m512i*)&out[i + 48]);
-    _mm512_storeu_si512((__m512i*)&out[i + 0], _mm512_add_epi32(a0, b0));
-    _mm512_storeu_si512((__m512i*)&out[i + 16], _mm512_add_epi32(a1, b1));
-    _mm512_storeu_si512((__m512i*)&out[i + 32], _mm512_add_epi32(a2, b2));
-    _mm512_storeu_si512((__m512i*)&out[i + 48], _mm512_add_epi32(a3, b3));
-    i += 64;
-  }
-
-  if ((size & 32) != 0) {
-    const __m512i a0 = _mm512_loadu_si512((const __m512i*)&a[i + 0]);
-    const __m512i a1 = _mm512_loadu_si512((const __m512i*)&a[i + 16]);
-    const __m512i b0 = _mm512_loadu_si512((const __m512i*)&out[i + 0]);
-    const __m512i b1 = _mm512_loadu_si512((const __m512i*)&out[i + 16]);
-    _mm512_storeu_si512((__m512i*)&out[i + 0], _mm512_add_epi32(a0, b0));
-    _mm512_storeu_si512((__m512i*)&out[i + 16], _mm512_add_epi32(a1, b1));
-    i += 32;
-  }
-
-  if ((size & 16) != 0) {
-    const __m512i a0 = _mm512_loadu_si512((const __m512i*)&a[i]);
-    const __m512i b0 = _mm512_loadu_si512((const __m512i*)&out[i]);
-    _mm512_storeu_si512((__m512i*)&out[i], _mm512_add_epi32(a0, b0));
-    i += 16;
-  }
-
-  size &= 15;
-  for (; size > 0; --size, ++i) {
-    out[i] += a[i];
-  }
-}
-
-//------------------------------------------------------------------------------
 // Entropy
 
 #if !defined(WEBP_HAVE_SLOW_CLZ_CTZ)
@@ -523,72 +425,6 @@ static uint64_t CombinedShannonEntropy_AVX512(const uint32_t X[256],
 #define DONT_USE_COMBINED_SHANNON_ENTROPY_AVX512_FUNC
 
 #endif
-
-//------------------------------------------------------------------------------
-
-static int VectorMismatch_AVX512(const uint32_t* const array1,
-                                 const uint32_t* const array2, int length) {
-  int match_len;
-
-  if (length >= 48) {
-    __m512i A0 = _mm512_loadu_si512((const __m512i*)&array1[0]);
-    __m512i A1 = _mm512_loadu_si512((const __m512i*)&array2[0]);
-    match_len = 0;
-    do {
-      const __mmask16 cmpA = _mm512_cmpeq_epi32_mask(A0, A1);
-      const __m512i B0 =
-          _mm512_loadu_si512((const __m512i*)&array1[match_len + 16]);
-      const __m512i B1 =
-          _mm512_loadu_si512((const __m512i*)&array2[match_len + 16]);
-      if (cmpA != 0xFFFF) {
-        match_len += BitsCtz(~(uint32_t)cmpA);
-        goto end;
-      }
-      match_len += 16;
-
-      {
-        const __mmask16 cmpB = _mm512_cmpeq_epi32_mask(B0, B1);
-        A0 = _mm512_loadu_si512((const __m512i*)&array1[match_len + 16]);
-        A1 = _mm512_loadu_si512((const __m512i*)&array2[match_len + 16]);
-        if (cmpB != 0xFFFF) {
-          match_len += BitsCtz(~(uint32_t)cmpB);
-          goto end;
-        }
-        match_len += 16;
-      }
-    } while (match_len + 48 < length);
-  } else {
-    match_len = 0;
-    if (length >= 16) {
-      const __mmask16 cmp = _mm512_cmpeq_epi32_mask(
-          _mm512_loadu_si512((const __m512i*)&array1[0]),
-          _mm512_loadu_si512((const __m512i*)&array2[0]));
-      if (cmp == 0xFFFF) {
-        match_len = 16;
-        if (length >= 32) {
-          const __mmask16 cmp2 = _mm512_cmpeq_epi32_mask(
-              _mm512_loadu_si512((const __m512i*)&array1[16]),
-              _mm512_loadu_si512((const __m512i*)&array2[16]));
-          if (cmp2 == 0xFFFF) {
-            match_len = 32;
-          } else {
-            match_len += BitsCtz(~(uint32_t)cmp2);
-            goto end;
-          }
-        }
-      } else {
-        match_len = BitsCtz(~(uint32_t)cmp);
-        goto end;
-      }
-    }
-  }
-
-end:
-  while (match_len < length && array1[match_len] == array2[match_len]) {
-    ++match_len;
-  }
-  return match_len;
-}
 
 // Bundles multiple (1, 2, 4 or 8) pixels into a single pixel.
 static void BundleColorMap_AVX512(const uint8_t* WEBP_RESTRICT const row,
@@ -943,9 +779,9 @@ WEBP_TSAN_IGNORE_FUNCTION void VP8LEncDspInitAVX512(void) {
   VP8LCombinedShannonEntropy = CombinedShannonEntropy_AVX512;
 #endif
 
-  // Left at AVX2 -- VectorMismatch: marginal benefit, early-exit dominated.
-  // Left at AVX2 -- AddVector/AddVectorEq: marginal for typical sizes
-  //   (40-536 elements); memory-bound, identical throughput at 256/512-bit.
+  // Not dispatched (left at AVX2):
+  // - VectorMismatch: marginal benefit, early-exit dominated.
+  // - AddVector/AddVectorEq: memory-bound, identical throughput at 256/512.
 }
 
 #else  // !WEBP_USE_AVX512
