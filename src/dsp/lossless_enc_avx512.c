@@ -253,6 +253,8 @@ static WEBP_INLINE __m512i FastSLog2_8x_AVX512(const __m256i v32,
   const __m256i log_cnt = _mm256_sub_epi32(floor_log2, _mm256_set1_epi32(7));
 
   // v_norm = v >> log_cnt  (brings v into [128..255] for table lookup)
+  // Dead lanes: log_cnt may be negative (e.g., v=1 → log_cnt=-7). vpsrlvd
+  // treats shift as unsigned → shift >= 32 → v_norm = 0. Safe.
   const __m256i v_norm = _mm256_srlv_epi32(v32, log_cnt);
 
   // Gather log2 fractional bits: kLog2Table[v_norm], scale=4 (uint32_t)
@@ -269,7 +271,9 @@ static WEBP_INLINE __m512i FastSLog2_8x_AVX512(const __m256i v32,
       log2_frac, _mm256_slli_epi32(log_cnt, LOG_2_PRECISION_BITS));
 
   // correction = LOG_2_RECIPROCAL_FIXED * (v & ((1 << log_cnt) - 1))
-  // v_frac < 256, LOG_2_RECIPROCAL_FIXED ~= 12.1M, product < 3.1G (fits 32b)
+  // Max: v_frac=255, product=255*12102203=3.09G (0xB7FC0B45). Exceeds INT32_MAX
+  // but fits UINT32. mullo_epi32 produces correct low 32 bits either way;
+  // cvtepu32_epi64 (unsigned extend) preserves the full value.
   const __m256i y = _mm256_sllv_epi32(_mm256_set1_epi32(1), log_cnt);
   const __m256i v_frac = _mm256_and_si256(v32,
                                            _mm256_sub_epi32(y,
@@ -485,6 +489,9 @@ static void BundleColorMap_AVX512(const uint8_t* WEBP_RESTRICT const row,
       // Vectorize the bit-packing: extract MSBs into a 64-bit mask via
       // vpmovb2m, then widen the 8 mask bytes to 8 uint32 values using
       // vpmovzxbd + shift + OR. Avoids 8 scalar shift+mask+store ops.
+      // Note: slli_epi64 shifts 64-bit lanes, not bytes. This works because
+      // xbits=3 inputs are 1-bit values (0 or 1), so cross-byte leakage
+      // from bit 1+ is always zero. Would break for multi-bit values.
       const __m256i mask_or_256 = _mm256_set1_epi32((int)0xff000000);
       for (x = 0; x + 64 <= width; x += 64, dst += 8) {
         const __m512i in = _mm512_loadu_si512((const __m512i*)&row[x]);
@@ -624,10 +631,15 @@ static void PredictorSub10_AVX512(const uint32_t* in, const uint32_t* upper,
 }
 
 // Predictor11: select.
+// Compute per-pixel SAD(A[k], B[k]) for 16 pixels in a 512-bit register.
+// Trick: unpack each pair of 32-bit pixels to 64-bit (padding with *A so the
+// upper halves cancel in SAD), then vpsadbw gives SAD per 64-bit group.
+// vpackssdw recombines: within each 128-bit lane, SAD results sit in even
+// int32 slots [0,2] of s_lo and s_hi. Pack produces [SAD0,SAD1,SAD2,SAD3]
+// per lane — exactly the per-pixel SAD values needed for the select predicate.
 static void GetSumAbsDiff32_AVX512(const __m512i* const A,
                                    const __m512i* const B,
                                    __m512i* const out) {
-  // Unpack pairs of 32-bit values to 64-bit for SAD computation.
   const __m512i A_lo = _mm512_unpacklo_epi32(*A, *A);
   const __m512i B_lo = _mm512_unpacklo_epi32(*B, *A);
   const __m512i A_hi = _mm512_unpackhi_epi32(*A, *A);
