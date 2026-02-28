@@ -55,7 +55,7 @@ if(MSVC AND CMAKE_C_COMPILER_ID STREQUAL "MSVC")
   set(SIMD_DISABLE_FLAGS)
 else()
   set(SIMD_ENABLE_FLAGS
-      "-mavx512f -mavx512bw -mavx512dq -mavx512vl;-mavx2;-msse4.1;-msse2;-mips32;-mdspr2;-mfpu=neon;-mmsa")
+      "-mavx512f -mavx512bw -mavx512dq -mavx512vl -mavx512cd -mavx512vbmi;-mavx2;-msse4.1;-msse2;-mips32;-mdspr2;-mfpu=neon;-mmsa")
   set(SIMD_DISABLE_FLAGS
       "-mno-avx512f;-mno-avx2;-mno-sse4.1;-mno-sse2;;-mno-dspr2;;-mno-msa")
 endif()
