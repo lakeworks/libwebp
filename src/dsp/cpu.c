@@ -165,9 +165,18 @@ static int x86CPUInfo(CPUFeature feature) {
   }
   if (feature == kAVX512) {
     if (x86CPUInfo(kAVX2) && max_cpuid_value >= 7) {
+      // The dispatched AVX-512 code uses F (EBX bit 16), DQ (17), CD (28),
+      // BW (30) and VL (31) -- vpshufb/vpsubb/vpmaddwd/vpmovb2m need BW,
+      // vextracti32x8 needs DQ, the 256-bit masked blends need VL, and
+      // _mm256_lzcnt_epi32 needs CD+VL. Checking F alone is not sufficient:
+      // Knights Landing and Knights Mill enumerate F and CD but not BW, DQ
+      // or VL, so the first zmm byte-shuffle would be an illegal instruction.
+      const uint32_t kAVX512Required =
+          (1u << 16) | (1u << 17) | (1u << 28) | (1u << 30) | (1u << 31);
       GetCPUInfo(cpu_info, 7);
-      // EBX bit 16 = AVX-512F
-      if (!(cpu_info[1] & (1 << 16))) return 0;
+      if (((uint32_t)cpu_info[1] & kAVX512Required) != kAVX512Required) {
+        return 0;
+      }
       // Verify OS saves ZMM state: XCR0 bits 5 (OPMASK), 6 (ZMM_Hi256),
       // 7 (Hi16_ZMM)
       return (xgetbv() & 0xE0) == 0xE0;
