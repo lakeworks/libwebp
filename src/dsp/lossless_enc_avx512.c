@@ -934,7 +934,7 @@ static void GetEntropyUnrefined_AVX512(
 
   // Process in chunks of 16, detecting boundaries via adjacent comparison.
   // For each chunk, compare X[i] != X[i-1] to find where values change.
-  for (i = 1; i + 15 <= length; i += 16) {
+  for (i = 1; i + 16 <= length; i += 16) {
     const __m512i cur = _mm512_loadu_si512((const __m512i*)&X[i]);
     // Build "previous" vector: X[i-1..i+14]
     const __m512i prev = _mm512_loadu_si512((const __m512i*)&X[i - 1]);
@@ -1002,7 +1002,7 @@ static void GetCombinedEntropyUnrefined_AVX512(
 
   cur_val = X[0] + Y[0];
 
-  for (i = 1; i + 15 <= length; i += 16) {
+  for (i = 1; i + 16 <= length; i += 16) {
     const __m512i xc = _mm512_loadu_si512((const __m512i*)&X[i]);
     const __m512i yc = _mm512_loadu_si512((const __m512i*)&Y[i]);
     const __m512i cur = _mm512_add_epi32(xc, yc);
